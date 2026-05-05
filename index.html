@@ -491,9 +491,10 @@ function pgnToFen(pgn, initialPly) {
   try {
     const chess = new Chess();
     const moves = pgn.trim().split(/\s+/);
-    for (let i = 0; i < initialPly && i < moves.length; i++) {
+    // FIX: was i < initialPly, now i <= initialPly
+    for (let i = 0; i <= initialPly && i < moves.length; i++) {
       const m = chess.move(moves[i]);
-      if (!m) return null; // illegal move
+      if (!m) return null;
     }
     return chess.fen();
   } catch (e) {
@@ -501,7 +502,6 @@ function pgnToFen(pgn, initialPly) {
     return null;
   }
 }
-
 // ── Fetch puzzles ────────────────────────────────────────────────────────────
 async function fetchPuzzles() {
   const btn = document.getElementById('fetchBtn');
