@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lichess Puzzle → FEN Converter</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #232635;
+      --border: #2e3250;
+      --accent: #7c6af7;
+      --accent2: #5eead4;
+      --text: #e8e9f3;
+      --muted: #7e82a2;
+      --green: #4ade80;
+      --red: #f87171;
+      --yellow: #fbbf24;
+      --radius: 12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      padding: 24px 16px 48px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+
+    header h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.5px;
+    }
+
+    header p {
+      color: var(--muted);
+      margin-top: 6px;
+      font-size: 0.95rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      max-width: 820px;
+      margin: 0 auto 24px;
+    }
+
+    .card-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--accent);
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: block;
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+      font-weight: 500;
+    }
+
+    input[type="text"],
+    input[type="number"],
+    select {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 10px 14px;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    input[type="text"]:focus,
+    input[type="number"]:focus,
+    select:focus {
+      border-color: var(--accent);
+    }
+
+    .api-row {
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+    }
+
+    .api-row input { flex: 1; }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .badge.ok   { background: #14532d33; color: var(--green); border: 1px solid #166534; }
+    .badge.fail { background: #7f1d1d33; color: var(--red);   border: 1px solid #991b1b; }
+    .badge.idle { background: #1e1b4b33; color: var(--muted); border: 1px solid var(--border); }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    @media (max-width: 560px) { .grid-2 { grid-template-columns: 1fr; } }
+
+    .themes-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .theme-chip {
+      padding: 5px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--muted);
+      font-size: 0.78rem;
+      cursor: pointer;
+      transition: all 0.15s;
+      user-select: none;
+    }
+
+    .theme-chip:hover { border-color: var(--accent); color: var(--text); }
+
+    .theme-chip.active {
+      background: #3730a3;
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 10px 20px;
+      border-radius: 8px;
+      border: none;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+
+    .btn:active { transform: scale(0.97); }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), #6366f1);
+      color: #fff;
+    }
+
+    .btn-secondary {
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .btn-sm {
+      padding: 6px 14px;
+      font-size: 0.8rem;
+    }
+
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
+
+    /* Results */
+    #results { display: none; }
+
+    .stats-bar {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+    }
+
+    .stat {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 16px;
+      text-align: center;
+    }
+
+    .stat-num { font-size: 1.5rem; font-weight: 700; color: var(--accent2); }
+    .stat-lbl { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+
+    thead th {
+      background: var(--surface2);
+      color: var(--muted);
+      text-transform: uppercase;
+      font-size: 0.7rem;
+      letter-spacing: 0.8px;
+      padding: 10px 12px;
+      text-align: left;
+    }
+
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background 0.15s;
+    }
+
+    tbody tr:hover { background: var(--surface2); }
+
+    tbody td {
+      padding: 10px 12px;
+      vertical-align: top;
+    }
+
+    .fen-cell {
+      font-family: 'Courier New', monospace;
+      font-size: 0.75rem;
+      color: var(--accent2);
+      word-break: break-all;
+      max-width: 340px;
+    }
+
+    .rating-pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 600;
+    }
+
+    .r-easy   { background: #14532d33; color: var(--green); }
+    .r-medium { background: #78350f33; color: var(--yellow); }
+    .r-hard   { background: #7f1d1d33; color: var(--red); }
+
+    .copy-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: var(--muted);
+      padding: 2px 8px;
+      font-size: 0.7rem;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .copy-btn:hover { border-color: var(--accent2); color: var(--accent2); }
+    .copy-btn.copied { border-color: var(--green); color: var(--green); }
+
+    .tag {
+      display: inline-block;
+      background: #1e1b4b;
+      border: 1px solid #3730a3;
+      color: #a5b4fc;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 0.68rem;
+      margin: 2px;
+    }
+
+    .link-btn {
+      color: var(--accent);
+      font-size: 0.75rem;
+      text-decoration: none;
+    }
+
+    .link-btn:hover { text-decoration: underline; }
+
+    #status-msg {
+      text-align: center;
+      padding: 16px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .export-row { display: flex; gap: 10px; flex-wrap: wrap; }
+
+    .section-sep { height: 1px; background: var(--border); margin: 18px 0; }
+
+    /* toast */
+    #toast {
+      position: fixed;
+      bottom: 28px;
+      right: 24px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+      z-index: 999;
+    }
+
+    #toast.show { opacity: 1; }
+
+    .overflow-table { overflow-x: auto; }
+
+    select[multiple] {
+      height: 130px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>♟ Lichess Puzzle → FEN</h1>
+  <p>Fetch puzzles from Lichess, filter by theme & difficulty, and export FENs instantly</p>
+</header>
+
+<!-- API Key Card -->
+<div class="card">
+  <div class="card-title">🔑 API Key</div>
+  <label>Lichess Personal API Token <span style="color:var(--muted)">(optional — higher rate limits)</span></label>
+  <div class="api-row">
+    <input type="text" id="apiKey" placeholder="lip_xxxxxxxxxxxxxxxxxxxx" autocomplete="off" />
+    <button class="btn btn-secondary btn-sm" onclick="verifyKey()">Verify</button>
+    <span id="keyBadge" class="badge idle">— Not verified</span>
+  </div>
+  <p style="margin-top:8px;font-size:0.78rem;color:var(--muted)">
+    Get a token at <a href="https://lichess.org/account/oauth/token" target="_blank" style="color:var(--accent)">lichess.org/account/oauth/token</a>. Read-only scope is sufficient.
+  </p>
+</div>
+
+<!-- Filter Card -->
+<div class="card">
+  <div class="card-title">⚙️ Puzzle Filters</div>
+  <div class="grid-2" style="margin-bottom:16px">
+    <div>
+      <label>Number of Puzzles <span style="color:var(--muted)">(1–200)</span></label>
+      <input type="number" id="numPuzzles" value="20" min="1" max="200" />
+    </div>
+    <div>
+      <label>Difficulty</label>
+      <select id="difficulty">
+        <option value="">Any</option>
+        <option value="easiest">Easiest (≤ 1000)</option>
+        <option value="easier">Easier (1000–1500)</option>
+        <option value="normal">Normal (1500–2000)</option>
+        <option value="harder">Harder (2000–2500)</option>
+        <option value="hardest">Hardest (≥ 2500)</option>
+      </select>
+    </div>
+  </div>
+
+  <label>Themes <span style="color:var(--muted)">(click to toggle — multiple allowed)</span></label>
+  <div class="themes-grid" id="themesGrid"></div>
+
+  <div class="actions">
+    <button class="btn btn-primary" id="fetchBtn" onclick="fetchPuzzles()">
+      ♟ Fetch Puzzles
+    </button>
+    <button class="btn btn-secondary" onclick="clearAll()">✕ Clear</button>
+  </div>
+</div>
+
+<!-- Results Card -->
+<div class="card" id="results">
+  <div class="card-title">📋 Results</div>
+
+  <div class="stats-bar" id="statsBar"></div>
+
+  <div class="export-row" style="margin-bottom:16px">
+    <button class="btn btn-secondary btn-sm" onclick="exportFENs()">⬇ Export FENs (.txt)</button>
+    <button class="btn btn-secondary btn-sm" onclick="exportCSV()">⬇ Export CSV</button>
+    <button class="btn btn-secondary btn-sm" onclick="copyAllFENs()">📋 Copy all FENs</button>
+  </div>
+
+  <div id="status-msg"></div>
+  <div class="overflow-table">
+    <table id="puzzleTable">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Puzzle ID</th>
+          <th>Rating</th>
+          <th>FEN (position before puzzle move)</th>
+          <th>Themes</th>
+          <th>Link</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── Themes from Lichess puzzle API docs ─────────────────────────────────────
+const THEMES = [
+  "advancedPawn","advantage","anastasiaMate","arabianMate","attackingF2F7",
+  "attraction","backRankMate","bishopEndgame","bodenMate","castling",
+  "capturingDefender","clearance","coercion","continuedAttack","crushingAttack",
+  "defensiveMove","deflection","discoveredAttack","doubleBishopMate","doubleCheck",
+  "endgame","enPassant","equality","exposedKing","fork","hangingPiece",
+  "hookMate","interference","intermezzo","kingsideAttack","knightEndgame",
+  "long","master","masterVsMaster","mate","mateIn1","mateIn2","mateIn3",
+  "mateIn4","mateIn5","middlegame","oneMove","opening","pawnEndgame",
+  "pin","promotion","queenEndgame","queenRookEndgame","queensideAttack",
+  "quietMove","rookEndgame","sacrifice","short","skewer","smotheredMate",
+  "superGM","trappedPiece","underPromotion","veryLong","vukovicMate",
+  "xRayAttack","zugzwang"
+];
+
+const selectedThemes = new Set();
+let puzzleData = [];
+
+// ── Build theme chips ────────────────────────────────────────────────────────
+const grid = document.getElementById('themesGrid');
+THEMES.forEach(t => {
+  const chip = document.createElement('span');
+  chip.className = 'theme-chip';
+  chip.textContent = t;
+  chip.onclick = () => {
+    if (selectedThemes.has(t)) { selectedThemes.delete(t); chip.classList.remove('active'); }
+    else { selectedThemes.add(t); chip.classList.add('active'); }
+  };
+  grid.appendChild(chip);
+});
+
+// ── Verify API key ───────────────────────────────────────────────────────────
+async function verifyKey() {
+  const key = document.getElementById('apiKey').value.trim();
+  const badge = document.getElementById('keyBadge');
+  badge.className = 'badge idle';
+  badge.innerHTML = '<span class="spinner"></span> Checking…';
+
+  if (!key) { badge.className = 'badge fail'; badge.textContent = '✗ No key entered'; return; }
+
+  try {
+    const res = await fetch('https://lichess.org/api/account', {
+      headers: { 'Authorization': `Bearer ${key}` }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      badge.className = 'badge ok';
+      badge.textContent = `✓ ${data.username}`;
+    } else {
+      badge.className = 'badge fail';
+      badge.textContent = '✗ Invalid token';
+    }
+  } catch {
+    badge.className = 'badge fail';
+    badge.textContent = '✗ Network error';
+  }
+}
+
+// ── Fetch puzzles ────────────────────────────────────────────────────────────
+// Correct Lichess API:  GET /api/puzzle/batch/{angle}
+//   {angle}  = theme name in path (one theme), or "mix" for random
+//   ?nb=     = 1-200  (default 50)
+//   ?difficulty= easiest | easier | normal | harder | hardest
+//   Requires Bearer token (puzzle:read scope) for difficulty filter & higher limits
+async function fetchPuzzles() {
+  const btn = document.getElementById('fetchBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Fetching…';
+
+  setStatus('<span class="spinner"></span> Contacting Lichess API…');
+  document.getElementById('results').style.display = 'block';
+  document.getElementById('tableBody').innerHTML = '';
+  document.getElementById('statsBar').innerHTML = '';
+  puzzleData = [];
+
+  try {
+    const key    = document.getElementById('apiKey').value.trim();
+    const count  = Math.min(200, Math.max(1, parseInt(document.getElementById('numPuzzles').value) || 20));
+    const diff   = document.getElementById('difficulty').value;
+    const themes = [...selectedThemes];
+
+    if (diff && !key) {
+      setStatus('⚠️ Difficulty filtering requires an API token. Please add your Lichess token above.');
+      btn.disabled = false;
+      btn.innerHTML = '♟ Fetch Puzzles';
+      return;
+    }
+
+    const headers = { 'Accept': 'application/json' };
+    if (key) headers['Authorization'] = `Bearer ${key}`;
+
+    // If multiple themes selected, fetch each in parallel and merge
+    const angles = themes.length ? themes : ['mix'];
+
+    // Per-angle count (distribute evenly, minimum 1)
+    const perAngle = Math.max(1, Math.ceil(count / angles.length));
+
+    setStatus(`<span class="spinner"></span> Fetching from ${angles.length} theme(s)…`);
+
+    const fetches = angles.map(angle => {
+      const url = new URL(`https://lichess.org/api/puzzle/batch/${encodeURIComponent(angle)}`);
+      url.searchParams.set('nb', Math.min(200, perAngle));
+      if (diff) url.searchParams.set('difficulty', diff);
+      return fetch(url.toString(), { headers })
+        .then(async r => {
+          if (!r.ok) {
+            const txt = await r.text();
+            throw new Error(`[${angle}] HTTP ${r.status}: ${txt}`);
+          }
+          return r.json();
+        });
+    });
+
+    // Use allSettled so one failed theme doesn't kill the whole batch
+    const results = await Promise.allSettled(fetches);
+
+    let allPuzzles = [];
+    const errors = [];
+
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        allPuzzles = allPuzzles.concat(result.value.puzzles || []);
+      } else {
+        errors.push(result.reason.message);
+      }
+    }
+
+    // Deduplicate by puzzle id, then trim to requested count
+    const seen = new Set();
+    allPuzzles = allPuzzles.filter(e => {
+      if (seen.has(e.puzzle.id)) return false;
+      seen.add(e.puzzle.id);
+      return true;
+    }).slice(0, count);
+
+    if (!allPuzzles.length) {
+      const msg = errors.length
+        ? `No puzzles returned. Errors: ${errors.join('; ')}`
+        : 'No puzzles returned. Try a different theme or check your API token.';
+      setStatus(msg);
+      btn.disabled = false;
+      btn.innerHTML = '♟ Fetch Puzzles';
+      return;
+    }
+
+    puzzleData = allPuzzles.map(entry => {
+      const p = entry.puzzle;
+      return {
+        id:       p.id,
+        rating:   p.rating,
+        fen:      p.fen,
+        themes:   p.themes  || [],
+        plays:    p.plays,
+        solution: (p.solution || []).join(' '),
+      };
+    });
+
+    renderTable();
+    renderStats();
+    setStatus(errors.length ? `⚠️ Loaded with warnings: ${errors.join('; ')}` : '');
+  } catch (err) {
+    setStatus(`❌ ${err.message}`);
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = '♟ Fetch Puzzles';
+}
+
+// ── Render table ─────────────────────────────────────────────────────────────
+function renderTable() {
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+  puzzleData.forEach((p, i) => {
+    const rClass = p.rating < 1500 ? 'r-easy' : p.rating < 2000 ? 'r-medium' : 'r-hard';
+    const tagHtml = p.themes.slice(0, 5).map(t => `<span class="tag">${t}</span>`).join('');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${i + 1}</td>
+      <td style="font-family:monospace;font-size:0.8rem">${p.id}</td>
+      <td><span class="rating-pill ${rClass}">${p.rating}</span></td>
+      <td class="fen-cell">
+        ${p.fen}
+        <br>
+        <button class="copy-btn" onclick="copyFEN(this,'${escapeFEN(p.fen)}')">copy</button>
+      </td>
+      <td>${tagHtml}</td>
+      <td><a class="link-btn" href="https://lichess.org/training/${p.id}" target="_blank">↗ Open</a></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function escapeFEN(fen) {
+  return fen.replace(/'/g, "\\'");
+}
+
+function renderStats() {
+  const ratings = puzzleData.map(p => p.rating);
+  const avg = Math.round(ratings.reduce((a, b) => a + b, 0) / ratings.length);
+  const min = Math.min(...ratings);
+  const max = Math.max(...ratings);
+
+  const allThemes = {};
+  puzzleData.forEach(p => p.themes.forEach(t => { allThemes[t] = (allThemes[t] || 0) + 1; }));
+  const topTheme = Object.entries(allThemes).sort((a, b) => b[1] - a[1])[0]?.[0] || '—';
+
+  document.getElementById('statsBar').innerHTML = `
+    <div class="stat"><div class="stat-num">${puzzleData.length}</div><div class="stat-lbl">Puzzles</div></div>
+    <div class="stat"><div class="stat-num">${avg}</div><div class="stat-lbl">Avg Rating</div></div>
+    <div class="stat"><div class="stat-num">${min}</div><div class="stat-lbl">Min Rating</div></div>
+    <div class="stat"><div class="stat-num">${max}</div><div class="stat-lbl">Max Rating</div></div>
+    <div class="stat"><div class="stat-num" style="font-size:0.9rem">${topTheme}</div><div class="stat-lbl">Top Theme</div></div>
+  `;
+}
+
+function setStatus(html) {
+  document.getElementById('status-msg').innerHTML = html;
+}
+
+// ── Copy single FEN ──────────────────────────────────────────────────────────
+function copyFEN(btn, fen) {
+  navigator.clipboard.writeText(fen).then(() => {
+    btn.textContent = 'copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'copy'; btn.classList.remove('copied'); }, 1500);
+  });
+}
+
+// ── Export / copy all FENs ───────────────────────────────────────────────────
+function copyAllFENs() {
+  const fens = puzzleData.map(p => p.fen).join('\n');
+  navigator.clipboard.writeText(fens).then(() => showToast('✓ All FENs copied!'));
+}
+
+function exportFENs() {
+  const fens = puzzleData.map(p => p.fen).join('\n');
+  download('lichess_fens.txt', fens);
+}
+
+function exportCSV() {
+  const header = 'id,rating,themes,fen,solution,lichess_url';
+  const rows = puzzleData.map(p =>
+    [p.id, p.rating, `"${p.themes.join(' ')}"`, `"${p.fen}"`, `"${p.solution}"`,
+     `https://lichess.org/training/${p.id}`].join(',')
+  );
+  download('lichess_puzzles.csv', [header, ...rows].join('\n'));
+}
+
+function download(filename, text) {
+  const a = document.createElement('a');
+  a.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(text);
+  a.download = filename;
+  a.click();
+  showToast(`✓ ${filename} downloaded`);
+}
+
+function clearAll() {
+  puzzleData = [];
+  document.getElementById('results').style.display = 'none';
+  document.getElementById('tableBody').innerHTML = '';
+  selectedThemes.clear();
+  document.querySelectorAll('.theme-chip.active').forEach(c => c.classList.remove('active'));
+  document.getElementById('numPuzzles').value = 20;
+  document.getElementById('difficulty').value = '';
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2200);
+}
+</script>
+</body>
+</html>
