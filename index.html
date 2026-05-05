@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Lichess Puzzle → FEN Converter</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
   <style>
     :root {
       --bg: #0f1117;
@@ -485,12 +486,23 @@ async function verifyKey() {
   }
 }
 
+// ── Compute FEN from PGN + initialPly ───────────────────────────────────────
+function pgnToFen(pgn, initialPly) {
+  try {
+    const chess = new Chess();
+    const moves = pgn.trim().split(/\s+/);
+    for (let i = 0; i < initialPly && i < moves.length; i++) {
+      const m = chess.move(moves[i]);
+      if (!m) return null; // illegal move
+    }
+    return chess.fen();
+  } catch (e) {
+    console.warn('FEN compute failed:', e);
+    return null;
+  }
+}
+
 // ── Fetch puzzles ────────────────────────────────────────────────────────────
-// Correct Lichess API:  GET /api/puzzle/batch/{angle}
-//   {angle}  = theme name in path (one theme), or "mix" for random
-//   ?nb=     = 1-200  (default 50)
-//   ?difficulty= easiest | easier | normal | harder | hardest
-//   Requires Bearer token (puzzle:read scope) for difficulty filter & higher limits
 async function fetchPuzzles() {
   const btn = document.getElementById('fetchBtn');
   btn.disabled = true;
@@ -518,17 +530,16 @@ async function fetchPuzzles() {
     const headers = { 'Accept': 'application/json' };
     if (key) headers['Authorization'] = `Bearer ${key}`;
 
-    // If multiple themes selected, fetch each in parallel and merge
     const angles = themes.length ? themes : ['mix'];
 
-    // Per-angle count (distribute evenly, minimum 1)
-    const perAngle = Math.max(1, Math.ceil(count / angles.length));
+    // Per-angle count (distribute evenly, minimum 1). API max is 50 per call.
+    const perAngle = Math.max(1, Math.min(50, Math.ceil(count / angles.length)));
 
     setStatus(`<span class="spinner"></span> Fetching from ${angles.length} theme(s)…`);
 
     const fetches = angles.map(angle => {
       const url = new URL(`https://lichess.org/api/puzzle/batch/${encodeURIComponent(angle)}`);
-      url.searchParams.set('nb', Math.min(200, perAngle));
+      url.searchParams.set('nb', perAngle);
       if (diff) url.searchParams.set('difficulty', diff);
       return fetch(url.toString(), { headers })
         .then(async r => {
@@ -540,7 +551,6 @@ async function fetchPuzzles() {
         });
     });
 
-    // Use allSettled so one failed theme doesn't kill the whole batch
     const results = await Promise.allSettled(fetches);
 
     let allPuzzles = [];
@@ -574,10 +584,18 @@ async function fetchPuzzles() {
 
     puzzleData = allPuzzles.map(entry => {
       const p = entry.puzzle;
+      const g = entry.game;
+
+      // Batch endpoint does NOT return fen; compute from PGN + initialPly
+      let fen = p.fen || null;
+      if (!fen && g && g.pgn && typeof p.initialPly === 'number') {
+        fen = pgnToFen(g.pgn, p.initialPly);
+      }
+
       return {
         id:       p.id,
         rating:   p.rating,
-        fen:      p.fen,
+        fen:      fen || '—',
         themes:   p.themes  || [],
         plays:    p.plays,
         solution: (p.solution || []).join(' '),
@@ -602,6 +620,7 @@ function renderTable() {
   puzzleData.forEach((p, i) => {
     const rClass = p.rating < 1500 ? 'r-easy' : p.rating < 2000 ? 'r-medium' : 'r-hard';
     const tagHtml = p.themes.slice(0, 5).map(t => `<span class="tag">${t}</span>`).join('');
+    const fenSafe = escapeFEN(p.fen);
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${i + 1}</td>
@@ -610,7 +629,7 @@ function renderTable() {
       <td class="fen-cell">
         ${p.fen}
         <br>
-        <button class="copy-btn" onclick="copyFEN(this,'${escapeFEN(p.fen)}')">copy</button>
+        <button class="copy-btn" onclick="copyFEN(this,'${fenSafe}')">copy</button>
       </td>
       <td>${tagHtml}</td>
       <td><a class="link-btn" href="https://lichess.org/training/${p.id}" target="_blank">↗ Open</a></td>
@@ -620,6 +639,7 @@ function renderTable() {
 }
 
 function escapeFEN(fen) {
+  if (!fen || fen === '—') return '';
   return fen.replace(/'/g, "\\'");
 }
 
@@ -648,6 +668,7 @@ function setStatus(html) {
 
 // ── Copy single FEN ──────────────────────────────────────────────────────────
 function copyFEN(btn, fen) {
+  if (!fen) return;
   navigator.clipboard.writeText(fen).then(() => {
     btn.textContent = 'copied!';
     btn.classList.add('copied');
@@ -657,12 +678,14 @@ function copyFEN(btn, fen) {
 
 // ── Export / copy all FENs ───────────────────────────────────────────────────
 function copyAllFENs() {
-  const fens = puzzleData.map(p => p.fen).join('\n');
+  const fens = puzzleData.map(p => p.fen).filter(f => f && f !== '—').join('\n');
+  if (!fens) return;
   navigator.clipboard.writeText(fens).then(() => showToast('✓ All FENs copied!'));
 }
 
 function exportFENs() {
-  const fens = puzzleData.map(p => p.fen).join('\n');
+  const fens = puzzleData.map(p => p.fen).filter(f => f && f !== '—').join('\n');
+  if (!fens) return;
   download('lichess_fens.txt', fens);
 }
 
